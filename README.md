@@ -1,24 +1,24 @@
-# Chameleon2++
+# Approximate-Chameleon: Approx-Ch
 
 This repository contains the code and experiments from the manuscript:
 
-**Chameleon2++: An Efficient and Scalable Variant Of Chameleon Clustering**  
+**Approx-Ch: An Approximate-Chameleon Clustering for Large-Scale and High-Dimensional Data**  
 📄 [Read the paper on arXiv](http://arxiv.org/) # Insert/Update arxiv link here (once uploaded)
 
 ---
 
 ## Overview
 
-This project extends the original **Chameleon2** clustering algorithm with an efficient and scalable version, **Chameleon2++**, using Approximate Nearest Neighbor (ANN) techniques. The included python code enable:
+This project propose an **Approximate-Chameleon** clustering algorithm for Large-Scale and High-Dimensional Data, **Approx-Ch**, using Approximate Nearest Neighbor (ANN) techniques. The included python code enable:
 
 - Reproducing results from the original **Chameleon2** paper - using Ch2.py.
-- Running and analyzing **Chameleon2++**, the proposed improved method - using Ch2++.py.
+- Running and analyzing **Approximate-Chameleon**, the proposed improved method - using Approx-Ch.py.
 
 ---
 
 ## Repository Contents
 
-The provided ZIP file contains **two set of python codes** addressing Ch2 and Ch2++:
+The provided ZIP file contains **two set of python codes** addressing Ch2 and Approx-Ch:
 
 ### 1. Chameleon2 (Original Implementation & Enhancements): Ch2.py
 
@@ -34,9 +34,9 @@ The code provide detailed configuration options over the original implementation
 
 ---
 
-### 2. Chameleon2++ (Proposed Method): Ch2++.py
+### 2. Approximate-Chameleon (Proposed Method): Approx-Ch.py
 
-Implements the **Chameleon2++** algorithm introduced in our manuscript.  
+Implements the **Approximate-Chameleon** algorithm introduced in our manuscript.  
 Key features:
 - Uses **Approximate k-NN Graphs** for scalability.
 - Leverages **hMETIS** for superior partitioning.

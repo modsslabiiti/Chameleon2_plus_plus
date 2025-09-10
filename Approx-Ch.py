@@ -1,5 +1,5 @@
 # ==============================================================================
-# Chameleon2 Equivalent: Ch2 Java Replica Variant
+# Approxiamte Chameleon: Approx-Ch (INDICON)
 # ==============================================================================
 
 import warnings
@@ -28,7 +28,7 @@ from annoy import AnnoyIndex
 # Logger class for capturing experiment results
 # ==============================================================================
 class ResultLogger:
-    def __init__(self, output_path="Ch2Run.csv"):
+    def __init__(self, output_path="Ch2++Run.csv"):
         """
         Initialize result logger to store experiment metrics.
         
@@ -42,7 +42,7 @@ class ResultLogger:
         if not os.path.exists(output_path):
             headers = [
                 'dataset', '#classes', 'log_type', 'r', 'size (n)', 'knn', 'knn_type', 'merge_method',
-                'p_max', 'num_nodes', 'num_edges', 'Partitioned (sec)', 'Partitions after hMETIS', 
+                'm (part)', 'num_nodes', 'num_edges', 'Partitioned (sec)', 'Partitions after hMETIS', 
                 'Partitions after Flood-Fill', 'alpha', 'beta', 'Number of final clusters after merging', 
                 'NMI-Score', 'Adjusted Rand Index', 'Total execution time (sec)'
             ]
@@ -83,420 +83,211 @@ class ResultLogger:
         print("="*60 + "\n")
 
 # ==============================================================================
-# K-NN GRAPH - Brute Force
+# K-NN GRAPH - Annoy
 # ==============================================================================
 
-def knn_graph_asymmetric_brute_force(df, knn, verbose=False):
-    """Build asymmetric k-NN graph using efficient brute force"""
+def build_annoy_index(points, n_trees, verbose=False):
+    """Build and return Annoy index for the given points"""
+    if verbose:
+        print("Building Annoy index...")
+    
+    n_dims = len(points[0])
+    annoy_index = AnnoyIndex(n_dims, 'euclidean')
+    
+    for i, point in enumerate(points):
+        annoy_index.add_item(i, point)
+    
+    annoy_index.build(n_trees)
+    
+    if verbose:
+        print(f"Annoy index built with {len(points)} points and {n_trees} trees")
+    
+    return annoy_index
+
+def knn_graph_asymmetric_annoy(df, knn, n_trees, verbose=False):
+    """Build asymmetric k-NN graph using Annoy"""
     points = np.array([p[1:] for p in df.itertuples()])
     
     if verbose:
-        print(f"Building asymmetric k-NN (knn = {knn})...")
+        print(f"Building asymmetric k-NN with Annoy (knn = {knn}, n_trees = {n_trees})...")
+    
+    # Build Annoy index
+    annoy_index = build_annoy_index(points, n_trees, verbose)
     
     g = nx.Graph()
     g.add_nodes_from(range(len(points)))
     
     iterator = tqdm(range(len(points)), total=len(points)) if verbose else range(len(points))
-    
     for i in iterator:
-        distances = np.linalg.norm(points - points[i], axis=1)
-        distances[i] = np.inf  # Exclude self by setting to infinity
+        # Get k+1 nearest neighbors (including self)
+        neighbors = annoy_index.get_nns_by_item(i, knn + 1)[1:]  # exclude self
         
-        # Get k smallest - guaranteed to exclude self
-        closest_indices = np.argpartition(distances, knn)[:knn]
-        
-        for j in closest_indices:
-            distance = distances[j]
+        for neighbor_idx in neighbors:
+            distance = annoy_index.get_distance(i, neighbor_idx)
             if distance > 0:
                 weight = max(1, min(1000, int(1000.0 / (distance + 1e-10))))
-                g.add_edge(i, j, weight=weight)
+                g.add_edge(i, neighbor_idx, weight=weight)
         
         g.nodes[i]['pos'] = points[i]
     
     g.graph['edge_weight_attr'] = 'weight'
     
     if verbose:
-        print(f"Asymmetric k-NN graph created with {g.number_of_nodes()} nodes and {g.number_of_edges()} edges")
+        print(f"Asymmetric Annoy k-NN graph created with {g.number_of_nodes()} nodes and {g.number_of_edges()} edges")
         if g.number_of_edges() > 0:
             print(f"Weight range: {min(d['weight'] for u, v, d in g.edges(data=True))} to {max(d['weight'] for u, v, d in g.edges(data=True))}")
     
     return g
 
-
-def knn_graph_symmetric_brute_force(df, knn, verbose=False):
-    """Build symmetric k-NN graph using efficient brute force"""
+def knn_graph_symmetric_annoy(df, knn, n_trees, verbose=False):
+    """Build symmetric k-NN graph using Annoy"""
     points = np.array([p[1:] for p in df.itertuples()])
     
     if verbose:
-        print(f"Building symmetric k-NN (knn = {knn})...")
+        print(f"Building symmetric k-NN with Annoy (knn = {knn}, n_trees = {n_trees})...")
     
-    # First pass: Build k-NN sets for each node for symmetric check
+    # Build Annoy index
+    annoy_index = build_annoy_index(points, n_trees, verbose)
+    
+    # Build k-NN sets for each node for symmetric check
     knn_sets = {}
-    if verbose:
-        print("First pass: Building k-NN sets...")
+    for i in range(len(points)):
+        neighbors = annoy_index.get_nns_by_item(i, knn + 1)[1:]  # exclude self
+        knn_sets[i] = set(neighbors)
     
-    first_pass_iterator = tqdm(range(len(points)), total=len(points)) if verbose else range(len(points))
-    for i in first_pass_iterator:
-        distances = np.linalg.norm(points - points[i], axis=1)
-        distances[i] = np.inf  # Exclude self
-        
-        closest_indices = np.argpartition(distances, knn)[:knn]
-        knn_sets[i] = set(closest_indices)
-    
-    # Second pass: Build graph with symmetry constraint
     g = nx.Graph()
     g.add_nodes_from(range(len(points)))
     
-    if verbose:
-        print("Second pass: Building symmetric graph...")
-    
-    second_pass_iterator = tqdm(range(len(points)), total=len(points)) if verbose else range(len(points))
-    for i in second_pass_iterator:
-        distances = np.linalg.norm(points - points[i], axis=1)
-        distances[i] = np.inf  # Exclude self
+    iterator = tqdm(range(len(points)), total=len(points)) if verbose else range(len(points))
+    for i in iterator:
+        neighbors = annoy_index.get_nns_by_item(i, knn + 1)[1:]  # exclude self
         
-        closest_indices = np.argpartition(distances, knn)[:knn]
-        
-        for j in closest_indices:
+        for neighbor_idx in neighbors:
             # Only add edge if mutual k-NN (symmetric condition)
-            if i in knn_sets[j]:
-                distance = distances[j]
+            if i in knn_sets[neighbor_idx]:
+                distance = annoy_index.get_distance(i, neighbor_idx)
                 if distance > 0:
                     weight = max(1, min(1000, int(1000.0 / (distance + 1e-10))))
-                    g.add_edge(i, j, weight=weight)
+                    g.add_edge(i, neighbor_idx, weight=weight)
         
         g.nodes[i]['pos'] = points[i]
     
     g.graph['edge_weight_attr'] = 'weight'
     
     if verbose:
-        print(f"Symmetric k-NN graph created with {g.number_of_nodes()} nodes and {g.number_of_edges()} edges")
+        print(f"Symmetric Annoy k-NN graph created with {g.number_of_nodes()} nodes and {g.number_of_edges()} edges")
         if g.number_of_edges() > 0:
             print(f"Weight range: {min(d['weight'] for u, v, d in g.edges(data=True))} to {max(d['weight'] for u, v, d in g.edges(data=True))}")
     
     return g
 
-def build_knn_graph(df, knn, knn_type='symmetric', verbose=False):
+def build_knn_graph_annoy(df, knn, knn_type, n_trees, verbose=False):
     """
-    Build k-NN graph with specified type.
+    Build k-NN graph using Annoy with specified type.
     
     Parameters:
     - df: DataFrame with features
     - knn: Number of nearest neighbors
     - knn_type: 'symmetric' or 'asymmetric'
+    - n_trees: Number of trees for Annoy index (more trees = better accuracy, slower build)
     - verbose: Whether to display progress
     
     Returns:
     - NetworkX graph
     """
     start_time = time.time()
-
+    
     if knn_type == 'symmetric':
-        graph = knn_graph_symmetric_brute_force(df, knn, verbose)
+        graph = knn_graph_symmetric_annoy(df, knn, n_trees, verbose)
     elif knn_type == 'asymmetric':
-        graph = knn_graph_asymmetric_brute_force(df, knn, verbose)
+        graph = knn_graph_asymmetric_annoy(df, knn, n_trees, verbose)
     else:
         raise ValueError(f"Unknown knn_type: {knn_type}. Must be 'symmetric' or 'asymmetric'")
-
-    print(f"Exact k-NN graph construction time: {time.time() - start_time:.7f} seconds")
+    
+    print(f"Annoy graph construction time: {time.time() - start_time:.7f} seconds")
+    
     return graph
 
 # ==============================================================================
-# PARTITIONING (FM) AND REFINEMENT FUNCTIONS (Flood-Fill)
+# PARTITIONING (hMETIS) AND REFINEMENT FUNCTIONS (Flood-Fill)
 # ==============================================================================
 
-class Vertex:
-    """Vertex class matching the Ch2 implementation"""
-    def __init__(self, node_id):
-        self.node_id = node_id
-        self.cluster = 0
-        self.used = False
-        self.difference = 0
-        self.previous = None
-        self.next = None
+def optimized_pre_part_graph(graph, k, df=None, verbose=False):
+    """
+    Optimized initial partitioning using hMETIS.
+    """
+    partition_start = time.time()
+    
+    if verbose:
+        print("Begin Partitioning...")
+    
+    if k <= 0:
+        raise ValueError("Number of partitions k must be positive")
+    if k >= graph.number_of_nodes():
+        if verbose:
+            print(f"Warning: k={k} >= number of nodes. Each node will be its own partition.")
+    
+    try:
+        edgecuts, parts = metis.part_graph(graph, k, recursive=False)
+    except Exception as e:
+        if verbose:
+            print(f"METIS partitioning failed: {e}")
+        parts = list(range(len(graph.nodes()))) % k
+    
+    partition_time = time.time() - partition_start
+    
+    if verbose:
+        print(f"Partitioned in {partition_time:.7f} seconds")
+        print(f"Number of unique partitions: {len(set(parts))}")
+        print(f"Partitioned graph into {k} parts with {edgecuts} edge cuts")
+    
+    cluster_attr = {i: part for i, part in enumerate(parts)}
+    nx.set_node_attributes(graph, cluster_attr, 'cluster')
+    
+    if df is not None:
+        df['cluster'] = [cluster_attr[i] for i in range(len(df))]
+    
+    return graph, parts, partition_time
 
-class FiducciaMattheyses:
-    """FM implementation exactly matching the Ch2 reference"""
-    
-    def __init__(self, iteration_limit=20):
-        self.iteration_limit = iteration_limit
-        self.vertices = {}
-        self.graph = None
-        self.node_count = 0
-        self.max_degree = 0
-        self.difference_buckets = None
-        self.swap_history = []
-        self.swap_history_cost = []
-    
-    def find_max_degree(self):
-        """Find maximum node degree in the graph"""
-        self.max_degree = 0
-        for node in self.graph.nodes():
-            degree = self.graph.degree(node)
-            if degree > self.max_degree:
-                self.max_degree = degree
-    
-    def create_vertices(self):
-        """Create vertex objects for all nodes"""
-        self.vertices = {}
-        for i, node in enumerate(self.graph.nodes()):
-            self.vertices[node] = Vertex(node)
-    
-    def create_initial_partition(self):
-        """Randomly assigns nodes to clusters at the beginning"""
-        nodes = list(self.graph.nodes())
-        mid = self.node_count // 2
-        
-        # Assign first half to cluster 0, second half to cluster 1
-        for i, node in enumerate(nodes):
-            if i < mid:
-                self.vertices[node].cluster = 0
-            else:
-                self.vertices[node].cluster = 1
-    
-    def prepare_difference_buckets(self):
-        """Initialize difference buckets array"""
-        # Buckets range from -max_degree to +max_degree
-        # Index 0 represents difference -max_degree, index 2*max_degree represents +max_degree
-        self.difference_buckets = [None] * (2 * self.max_degree + 1)
-    
-    def add_into_bucket(self, difference, vertex):
-        """Add vertex into bucket with the given difference"""
-        position = difference + self.max_degree
-        if position < 0 or position >= len(self.difference_buckets):
-            return  # Skip invalid positions
-            
-        if self.difference_buckets[position] is None:
-            self.difference_buckets[position] = vertex
-            vertex.next = None
-        else:
-            self.difference_buckets[position].previous = vertex
-            vertex.next = self.difference_buckets[position]
-            self.difference_buckets[position] = vertex
-        vertex.previous = None
-    
-    def remove_from_bucket(self, vertex):
-        """Remove given vertex from the difference bucket"""
-        position = vertex.difference + self.max_degree
-        if position < 0 or position >= len(self.difference_buckets):
-            return
-            
-        if vertex.previous is not None:
-            vertex.previous.next = vertex.next
-        else:
-            self.difference_buckets[position] = vertex.next
-        
-        if vertex.next is not None:
-            vertex.next.previous = vertex.previous
-    
-    def compute_differences(self):
-        """Compute differences of all nodes"""
-        self.prepare_difference_buckets()
-        
-        for node in self.graph.nodes():
-            vertex = self.vertices[node]
-            difference = 0
-            
-            # Get all neighbors of this node
-            for neighbor in self.graph.neighbors(node):
-                neighbor_vertex = self.vertices[neighbor]
-                if vertex.cluster != neighbor_vertex.cluster:
-                    difference += 1  # External connection
-                else:
-                    difference -= 1  # Internal connection
-            
-            self.add_into_bucket(difference, vertex)
-            vertex.difference = difference
-    
-    def find_best_vertex(self, cluster):
-        """
-        Find best vertex to swap from the given cluster.
-        If no vertex from given cluster left, return best from other cluster.
-        """
-        # Start from highest difference (best gain)
-        i = 2 * self.max_degree
-        while i >= 0:
-            if i < len(self.difference_buckets) and self.difference_buckets[i] is not None:
-                item = self.difference_buckets[i]
-                while item is not None:
-                    if item.cluster == cluster and not item.used:
-                        return item
-                    item = item.next
-            i -= 1
-        
-        # If no vertex found in the preferred cluster, try the other cluster
-        other_cluster = 1 if cluster == 0 else 0
-        return self.find_best_vertex(other_cluster) if cluster != other_cluster else None
-    
-    def add_into_history(self, i, vertex):
-        """Add vertex and its cost to the swapping history"""
-        if i >= len(self.swap_history):
-            self.swap_history.extend([None] * (i - len(self.swap_history) + 1))
-            self.swap_history_cost.extend([0] * (i - len(self.swap_history_cost) + 1))
-        
-        self.swap_history[i] = vertex
-        self.swap_history_cost[i] = vertex.difference
-        vertex.used = True
-    
-    def update_differences(self, vertex):
-        """
-        Change positions in difference_buckets of vertices neighboring the given vertex
-        """
-        for neighbor_node in self.graph.neighbors(vertex.node_id):
-            neighbor = self.vertices[neighbor_node]
-            
-            if neighbor.used:
-                continue
-            
-            # Remove from current bucket
-            self.remove_from_bucket(neighbor)
-            
-            if neighbor.cluster == vertex.cluster:
-                # Same cluster - decrease difference by 2
-                neighbor.difference += 2
-            else:
-                # Different cluster - increase difference by 2  
-                neighbor.difference -= 2
-            
-            # Add back to appropriate bucket
-            self.add_into_bucket(neighbor.difference, neighbor)
-    
-    def find_best_swaps(self):
-        """
-        Find how many swaps should be done to achieve best difference sum.
-        If two or more swap sequences have same gain, choose better balanced one.
-        """
-        max_difference = 0
-        difference_sum = 0
-        max_difference_index = -1
-        
-        for i in range(len(self.swap_history_cost)):
-            difference_sum += self.swap_history_cost[i]
-            # Keep the bisection balanced, only swap pairs (i % 2 == 1)
-            if difference_sum > max_difference and i % 2 == 1:
-                max_difference = difference_sum
-                max_difference_index = i
-        
-        return max_difference_index
-    
-    def swap_up_to_best_index(self):
-        """
-        Make the best possible sequence of swaps and return index of last vertex swapped.
-        If index is -1, no vertices were swapped.
-        """
-        index = self.find_best_swaps()
-        
-        if index >= 0:
-            for i in range(index + 1):
-                if i < len(self.swap_history) and self.swap_history[i] is not None:
-                    vertex = self.swap_history[i]
-                    vertex.cluster = 1 if vertex.cluster == 0 else 0
-        
-        return index
-    
-    def reset(self):
-        """Prepare algorithm for the next iteration"""
-        for vertex in self.vertices.values():
-            vertex.used = False
-        self.swap_history = []
-        self.swap_history_cost = []
-    
-    def minimize_costs(self):
-        self.compute_differences()
-        
-        for i in range(self.node_count):
-            # Alternate between clusters to maintain balance
-            cluster_preference = i % 2
-            best_vertex = self.find_best_vertex(cluster_preference)
-            
-            if best_vertex is None:
-                break
-                
-            self.add_into_history(i, best_vertex)
-            self.update_differences(best_vertex)
-            self.remove_from_bucket(best_vertex)
-        
-        return self.swap_up_to_best_index()
-    
-    def bisect(self, graph, max_partition_size=15):
-        """
-        Main bisection method,
-        Returns list of two clusters (lists of nodes)
-        """
-        # Initialize
-        self.graph = graph
-        self.node_count = graph.number_of_nodes()
-        
-        if self.node_count == 0:
-            return [[], []]
-        
-        self.find_max_degree()
-        self.create_vertices()
-        self.create_initial_partition()
-        
-        iteration_counter = 0
-        
-        # Repeat until no better swap can be done
-        while iteration_counter < self.iteration_limit:
-            iteration_counter += 1
-            index = self.minimize_costs()
-            self.reset()
-            if index == -1:  # No improvement
-                break
-        
-        # Create node clusters
-        cluster_0 = []
-        cluster_1 = []
-        
-        for node, vertex in self.vertices.items():
-            if vertex.cluster == 0:
-                cluster_0.append(node)
-            else:
-                cluster_1.append(node)
-        
-        return [cluster_0, cluster_1]
-
-def recursive_bisection_aligned(graph, max_partition_size):
+def optimized_flood_fill_refinement(graph, initial_partitions, verbose=False):
     """
-    Recursive bisection implementation
+    Optimized flood fill refinement using deque.
     """
-    if graph.number_of_nodes() <= max_partition_size:
-        return [set(graph.nodes())]
+    if verbose:
+        print("Refining partitions with optimized flood fill...")
+        start = time.time()
     
-    # Create FM instance
-    fm = FiducciaMattheyses()
+    partition_groups = defaultdict(list)
+    for node, partition in enumerate(initial_partitions):
+        partition_groups[partition].append(node)
     
-    # Bisect current graph
-    clusters = fm.bisect(graph, max_partition_size)
-    
-    result = []
-    
-    # Process each partition recursively
-    for cluster_nodes in clusters:
-        if len(cluster_nodes) <= max_partition_size:
-            result.append(set(cluster_nodes))
-        else:
-            # Create subgraph for this cluster
-            subgraph = graph.subgraph(cluster_nodes).copy()
-            # Recursively partition
-            sub_partitions = recursive_bisection_aligned(subgraph, max_partition_size)
-            result.extend(sub_partitions)
-    
-    return result
-
-def refine_partitions(graph, partition_indices):
-    """
-    Refine partitions by finding connected components within each partition.
-    """
+    adj_list = {node: set(graph.neighbors(node)) for node in graph.nodes()}
     refined_partitions = []
-    for cluster_nodes in partition_indices:
-        if not cluster_nodes:  # Skip empty partitions
+    
+    for partition_id, nodes in partition_groups.items():
+        if not nodes:
             continue
-        # Extract subgraph of this partition
-        subgraph = graph.subgraph(cluster_nodes)
-        # Find connected components in this subgraph
-        connected_components = list(nx.connected_components(subgraph))
-        refined_partitions.extend(connected_components)
+        unvisited = set(nodes)
+        while unvisited:
+            start_node = unvisited.pop()
+            component = []
+            queue = deque([start_node])
+            visited_in_component = {start_node}
+            while queue:
+                current = queue.popleft()
+                component.append(current)
+                for neighbor in adj_list[current]:
+                    if neighbor in unvisited:
+                        unvisited.remove(neighbor)
+                        visited_in_component.add(neighbor)
+                        queue.append(neighbor)
+            refined_partitions.append(component)
+    
+    if verbose:
+        print(f"Refinement completed in {time.time() - start:.7f} seconds")
+        print(f"Original partitions: {len(partition_groups)}")
+        print(f"Refined partitions: {len(refined_partitions)}")
+    
     return refined_partitions
 
 def update_graph_and_dataframe(graph, df, refined_partitions, verbose=False):
@@ -518,105 +309,25 @@ def update_graph_and_dataframe(graph, df, refined_partitions, verbose=False):
     
     return len(refined_partitions)
 
-def complete_fm_partitioning(graph, max_partition_size, df=None, verbose=False):
+def complete_optimized_partitioning(graph, k, df=None, verbose=False):
     """
-    Complete FM partitioning with flood fill refinement.
-    
-    Args:
-        graph: NetworkX graph to partition
-        max_partition_size: Maximum allowed partition size
-        df: Optional dataframe to update with cluster assignments
-        verbose: Whether to print progress information
-    
-    Returns:
-        tuple: (graph, refined_partitions, fm_partition_time, initial_partition_count)
+    Complete optimized partitioning pipeline.
     """
     total_start = time.time()
     
+    graph, initial_parts, partition_time = optimized_pre_part_graph(graph, k, df=None, verbose=verbose)
+    refined_partitions = optimized_flood_fill_refinement(graph, initial_parts, verbose=verbose)
+    final_partition_count = update_graph_and_dataframe(graph, df, refined_partitions, verbose=verbose)
+    
     if verbose:
-        print("Begin FM Partitioning...")
+        print(f"Total partitioning time: {time.time() - total_start:.7f} seconds")
+        print(f"Final number of partitions: {final_partition_count}")
     
-    if max_partition_size <= 0:
-        raise ValueError("Max partition size must be positive")
-    if max_partition_size >= graph.number_of_nodes():
-        if verbose:
-            print(f"Warning: max_partition_size={max_partition_size} >= number of nodes. Each node will be its own partition.")
-    
-    try:
-        # Step 1: Initial FM partitioning
-        fm_start = time.time()
-        final_partitions = recursive_bisection_aligned(graph, max_partition_size)
-        
-        # Create initial partition assignments
-        parts = [0] * graph.number_of_nodes()
-        node_to_index = {node: i for i, node in enumerate(graph.nodes())}
-        
-        for partition_id, partition_nodes in enumerate(final_partitions):
-            for node in partition_nodes:
-                if node in node_to_index:
-                    parts[node_to_index[node]] = partition_id
-        
-        fm_partition_time = time.time() - fm_start
-        
-        if verbose:
-            print(f"FM partitioning time: {fm_partition_time:.7f} seconds")
-            print(f"Initial partitions: {len(final_partitions)}")
-        
-        # Step 2: Flood fill refinement
-        flood_fill_start = time.time()
-        
-        # Group nodes by partition
-        partition_groups = defaultdict(list)
-        for node_idx, partition in enumerate(parts):
-            node = list(graph.nodes())[node_idx]
-            partition_groups[partition].append(node)
-        
-        # Convert to list format for refine_partitions function
-        partition_indices = [partition_groups[i] for i in sorted(partition_groups.keys())]
-        
-        # Refine partitions using flood fill
-        refined_partitions = refine_partitions(graph, partition_indices)
-        
-        # Convert sets to lists if needed
-        refined_partitions = [list(partition) if isinstance(partition, set) else partition 
-                             for partition in refined_partitions]
-        
-        flood_fill_time = time.time() - flood_fill_start
-        
-        if verbose:
-            print(f"Flood-Fill time: {flood_fill_time:.7f} seconds")
-            print(f"Refined partitions: {len(refined_partitions)}")
-        
-        # Step 3: Update graph and dataframe
-        final_partition_count = update_graph_and_dataframe(graph, df, refined_partitions, verbose=verbose)
-        
-        total_time = time.time() - total_start
-        
-        if verbose:
-            print(f"Total FM partitioning time: {total_time:.7f} seconds")
-        
-    except Exception as e:
-        if verbose:
-            print(f"FM partitioning failed: {e}")
-        # Fallback to simple alternating partition
-        parts = [i % 2 for i in range(len(graph.nodes()))]
-        refined_partitions = [[], []]
-        for i, node in enumerate(graph.nodes()):
-            refined_partitions[parts[i]].append(node)
-        fm_partition_time = 0.0
-        final_partition_count = update_graph_and_dataframe(graph, df, refined_partitions, verbose=verbose)
-    
-    return graph, refined_partitions, fm_partition_time, len(set(parts))
+    return graph, refined_partitions, partition_time, len(set(initial_parts))
 
 # ==============================================================================
-# Ch2-COMPATIBLE MERGING CLASS - Matching Original Paper Implementation
+# Ch2-COMPATIBLE MERGING CLASS - Replicating Original Paper Implementation
 # ==============================================================================
-
-import heapq
-import numpy as np
-import pandas as pd
-from tqdm import tqdm
-from sklearn.metrics import normalized_mutual_info_score
 
 class OptimizedChameleonMerger:
     """
@@ -1066,14 +777,14 @@ def merge_clusters(graph, df, alpha, beta, target_clusters, method='optimal',
         raise ValueError(f"Unknown merge method: {method}. Must be 'optimal'")
 
 # ==============================================================================
-# Updated Main Function: Run_Ch2 
+# Updated Main Function: Run_ApproxCh2
 # ==============================================================================
-def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method='optimal', logger=None):
+def Run_ApproxCh2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method='optimal', logger=None):
     """
     Execute the Chameleon2 clustering algorithm on the given dataset.
     """
     start_time = time.time()
-    
+
     # Load & prepare Olivetti faces dataset
     # from sklearn.datasets import fetch_olivetti_faces
     # olivetti = fetch_olivetti_faces(shuffle=True, random_state=42)
@@ -1097,6 +808,7 @@ def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method=
     df = df.apply(pd.to_numeric, errors='ignore')
     dataset = df.copy()
 
+    # Pre-Processing as per the type of real world dataset used (to be generic)
     # 1. Benchmark Datasets, 2. Pendigits, 3. Cytof.one
     feature_columns = dataset.columns[:-1].tolist()
     num_classes = dataset[dataset.columns[-1]].nunique()
@@ -1116,8 +828,7 @@ def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method=
     df = dataset[feature_columns]
 
     # Initial partition count = sqrt(n/2)
-    # part_count = math.floor(math.sqrt(n / 2))
-    max_partition_size = max(5, n // 100)
+    part_count = math.floor(math.sqrt(n / 2))
     
     # Dictionary to store experiment results
     result_dict = {
@@ -1136,18 +847,18 @@ def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method=
     elif log_type == "log2":  base = math.log2(n)
     else: raise ValueError(f"Unknown log_type {log_type!r}")
     knn = r * int(base)
-    # n_trees = knn
+    n_trees = knn
     
     # Update result dictionary
     result_dict['knn'] = knn
-    result_dict['p_max'] = max_partition_size
+    result_dict['m (part)'] = part_count
 
     # ==============================================================================
     # Step 1: Build k-NN graph (UNIFIED)
     # ==============================================================================
     
     # Build the k-NN graph using unified function
-    graph = build_knn_graph(df, knn, knn_type, verbose=True)
+    graph = build_knn_graph_annoy(df, knn, knn_type, n_trees, verbose=True)
     
     num_nodes = graph.number_of_nodes()
     num_edges = graph.number_of_edges()
@@ -1162,12 +873,12 @@ def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method=
     # ==============================================================================
     
     # Execute complete optimized partitioning
-    graph, refined_partitions, partition_time, fm_partitions = complete_fm_partitioning(graph, max_partition_size, df, verbose=True)
+    graph, refined_partitions, partition_time, hmetis_partitions = complete_optimized_partitioning(graph, part_count, df, verbose=True)
     final_part_count = len(refined_partitions)
     
     # Update result dictionary
     result_dict['Partitioned (sec)'] = f"{partition_time:.7f}"
-    result_dict['Partitions after hMETIS'] = fm_partitions
+    result_dict['Partitions after hMETIS'] = hmetis_partitions
     result_dict['Partitions after Flood-Fill'] = final_part_count
 
     #==========================================================================
@@ -1219,20 +930,20 @@ def Run_Ch2(path, log_type, r, alpha, beta, knn_type='asymmetric', merge_method=
     return result_dict
 
 # ==============================================================================
-# Run experiments with both methods and k-NN types 
+# Run experiments with both methods and k-NN types
 # ==============================================================================
 
 if __name__ == "__main__":
-    # Set the path to your datasets
+    # Set the path to your datasets (in a dir)
     dataset_dir = "mnist"
     
     # Initialize logger
-    logger = ResultLogger("Ch2Run.csv")
+    logger = ResultLogger("Ch2++Run.csv")
 
     # Get list of dataset files (ignoring hidden files)
     dataset_files = [os.path.join(dataset_dir, fn) 
-                  for fn in os.listdir(dataset_dir) 
-                  if not fn.startswith(".")]
+                   for fn in os.listdir(dataset_dir) 
+                   if not fn.startswith(".")]
 
     # Define experiment parameters
     log_types = ["ln"] # ["ln", "log10", "log2"]
@@ -1240,22 +951,22 @@ if __name__ == "__main__":
     alpha_values = [2]  # [1, 2, 3, 4] Alpha values b/w 1 to 4
     beta_values = [1]   # [1, 2, 3, 4] Beta values b/w 1 to 4
     knn_types = ['asymmetric']
-    merge_methods = ['optimal']
+    merge_methods = ['optimal'] 
 
-    # Run Chameleon2 on each dataset with different parameter combinations - Generic
+    # Run Approx-Ch on each dataset with different parameter combinations - Generic
     for dataset_path in dataset_files:
-      for log_type in log_types:
-          for r in r_values:
-              for alpha in alpha_values:
-                  for beta in beta_values:
-                      for knn_type in knn_types:
-                          for merge_method in merge_methods:
-                              try:
-                                  Run_Ch2(dataset_path, log_type, r, alpha, beta, 
-                                         knn_type, merge_method, logger)
-                              except Exception as e:
-                                  print(f"Error processing {dataset_path} with {knn_type}-{merge_method}: {e}")
-                                  continue
+       for log_type in log_types:
+           for r in r_values:
+               for alpha in alpha_values:
+                   for beta in beta_values:
+                       for knn_type in knn_types:
+                           for merge_method in merge_methods:
+                               try:
+                                   Run_ApproxCh2(dataset_path, log_type, r, alpha, beta, 
+                                          knn_type, merge_method, logger)
+                               except Exception as e:
+                                   print(f"Error processing {dataset_path} with {knn_type}-{merge_method}: {e}")
+                                   continue
     
     # For Olivetti-Faces Run -
     # for knn_type in knn_types:
@@ -1270,7 +981,7 @@ if __name__ == "__main__":
     #                         break
     #                     for merge_method in merge_methods:
     #                         try:
-    #                             result = Run_Ch2('olivetti_faces', log_type, r, alpha, beta, 
+    #                             result = Run_ApproxCh2('olivetti_faces', log_type, r, alpha, beta, 
     #                                             knn_type, merge_method, logger)
     #                             if result is None:
     #                                 print(f"Skipping remaining alpha-beta combinations for {knn_type}, {log_type}, r={r} due to disconnected graph")
