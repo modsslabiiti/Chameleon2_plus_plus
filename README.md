@@ -1,6 +1,6 @@
 # Chameleon2++
 
-This repository contains the code and experiments from the manuscript:
+This repository contains the old code and experiments from the manuscript:
 
 **Chameleon2++: An Efficient Chameleon2 Clustering with Approximate Nearest Neighbors**  
 📄 [Read the paper on arXiv](http://arxiv.org/abs/2501.02612)
