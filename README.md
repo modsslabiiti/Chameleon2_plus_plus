@@ -3,7 +3,7 @@
 This repository contains the code and experiments from the manuscript:
 
 **Approx-Ch: An Approximate-Chameleon Clustering for Large-Scale and High-Dimensional Data**  
-📄 [Read the paper on arXiv](http://arxiv.org/) # Insert/Update arxiv link here (once uploaded)
+📄 [Read the paper on arXiv]([http://arxiv.org/](https://arxiv.org/abs/2501.02612))
 
 ---
 
@@ -71,7 +71,7 @@ pip install numpy pandas networkx seaborn matplotlib tqdm
 ## Reproducibility
 
 To replicate the results:
-- Refer to the [manuscript](http://arxiv.org/). # Insert arxiv link here (once uploaded)
+- Refer to the [manuscript]([http://arxiv.org/](https://arxiv.org/abs/2501.02612)).
 - Use the fine-tuned parameters provided in the manuscript.
 
 ---
@@ -81,6 +81,10 @@ To replicate the results:
 If you use this code in your research, please cite: # Insert/Update the citation once arxiv is available
 
 ```
-@article{
+@article{singh2025chameleon2++,
+  title={Chameleon2++: An efficient chameleon2 clustering with approximate nearest neighbors},
+  author={Singh, Priyanshu and Ahuja, Kapil},
+  journal={arXiv preprint arXiv:2501.02612},
+  year={2025}
 }
 ```
