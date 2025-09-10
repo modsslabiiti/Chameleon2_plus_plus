@@ -1,41 +1,40 @@
 # Chameleon2++
 
-This repository contains the old code and experiments from the manuscript:
+This repository contains the code and experiments from the manuscript:
 
-**Chameleon2++: An Efficient Chameleon2 Clustering with Approximate Nearest Neighbors**  
-📄 [Read the paper on arXiv](http://arxiv.org/abs/2501.02612)
+**Chameleon2++: An Efficient and Scalable Variant Of Chameleon Clustering**  
+📄 [Read the paper on arXiv](http://arxiv.org/) # Insert/Update arxiv link here (once uploaded)
 
 ---
 
 ## Overview
 
-This project extends the original **Chameleon2** clustering algorithm with a more efficient version, **Chameleon2++**, using Approximate Nearest Neighbor (ANN) techniques. The included Jupyter notebooks enable:
+This project extends the original **Chameleon2** clustering algorithm with an efficient and scalable version, **Chameleon2++**, using Approximate Nearest Neighbor (ANN) techniques. The included python code enable:
 
-- Reproducing results from the original **Chameleon2** paper.
-- Running and analyzing **Chameleon2++**, the proposed improved method.
-- Exploring different partitioning and ANN techniques.
+- Reproducing results from the original **Chameleon2** paper - using Ch2.py.
+- Running and analyzing **Chameleon2++**, the proposed improved method - using Ch2++.py.
 
 ---
 
 ## Repository Contents
 
-The provided ZIP file contains **five Jupyter notebooks** divided into two main sections:
+The provided ZIP file contains **two set of python codes** addressing Ch2 and Ch2++:
 
-### 1. Chameleon2 (Original Implementation & Enhancements)
+### 1. Chameleon2 (Original Implementation & Enhancements): Ch2.py
 
 Reproduces and extends results from the original Chameleon2 paper:  
 **Chameleon2: An Improved Graph-Based Clustering Algorithm**  
 🔗 [ACM Link](https://dl.acm.org/doi/10.1145/3299876)
 
+- Uses traditional **exact k-NN Graph**.
 Partitioning methods used:
-- **hMETIS**
-- **FM-Bisection**
+- **Recursive FM-Bisection**
 
-These notebooks provide detailed configuration options and improvements over the original implementation.
+The code provide detailed configuration options over the original implementation.
 
 ---
 
-### 2. Chameleon2++ (Proposed Method)
+### 2. Chameleon2++ (Proposed Method): Ch2++.py
 
 Implements the **Chameleon2++** algorithm introduced in our manuscript.  
 Key features:
@@ -43,9 +42,7 @@ Key features:
 - Leverages **hMETIS** for superior partitioning.
 
 Supported ANN libraries:
-- **Annoy** (performs best in our experiments)
-- **FLANN**
-- **NMSLIB**
+- **Annoy**
 
 ---
 
@@ -69,35 +66,21 @@ pip install numpy pandas networkx seaborn matplotlib tqdm
 - 🔗 [GitHub](https://github.com/spotify/annoy)
 - 📦 `pip install annoy`
 
-#### FLANN
-- 🔗 [GitHub](https://github.com/flann-lib/flann)
-- 📦 `pip install flann`
-
-#### NMSLIB
-- 🔗 [GitHub](https://github.com/nmslib/nmslib)
-- 📦 `pip install nmslib`  
-  or  
-  📦 `pip install --no-binary :all: nmslib` (if you encounter build issues)
-
 ---
 
 ## Reproducibility
 
 To replicate the results:
-- Refer to the [manuscript](http://arxiv.org/abs/2501.02612).
+- Refer to the [manuscript](http://arxiv.org/). # Insert arxiv link here (once uploaded)
 - Use the fine-tuned parameters provided in the manuscript.
 
 ---
 
 ## Citation
 
-If you use this code in your research, please cite:
+If you use this code in your research, please cite: # Insert/Update the citation once arxiv is available
 
 ```
-@article{singh2025chameleon2++,
-  title={Chameleon2++: An Efficient Chameleon2 Clustering with Approximate Nearest Neighbors},
-  author={Singh, Priyanshu and Ahuja, Kapil},
-  journal={arXiv preprint arXiv:2501.02612},
-  year={2025}
+@article{
 }
 ```
